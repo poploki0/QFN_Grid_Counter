@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grid Counter - นับช่องบนภาพ</title>
+<style>
+  :root {
+    --bg: #f3f4f1;
+    --panel: #ffffff;
+    --ink: #1d2320;
+    --muted: #5d6762;
+    --line: #d5d9d4;
+    --accent: #0f6b5a;
+    --accent-ink: #ffffff;
+    --canvas-bg: #e4e7e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151917;
+      --panel: #1f2522;
+      --ink: #e8ece9;
+      --muted: #9aa5a0;
+      --line: #36403b;
+      --accent: #3fb59d;
+      --accent-ink: #08130f;
+      --canvas-bg: #101311;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Noto Sans Thai", "Sarabun", "Tahoma", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 16px;
+    padding: 16px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  @media (max-width: 860px) { .app { grid-template-columns: 1fr; } }
+  .side { display: flex; flex-direction: column; gap: 12px; }
+  .box {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+  }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
+  input[type=number] {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  input[type=color] { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); padding: 2px; }
+  input[type=range] { width: 100%; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+  button {
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  .result .pct { font-size: 40px; font-weight: 700; line-height: 1.1; color: var(--accent); }
+  .result .formula { font-size: 14px; color: var(--muted); margin-top: 4px; word-break: break-word; }
+  .stage {
+    background: var(--canvas-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    min-height: 300px;
+    padding: 12px;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  #cv { max-width: 100%; height: auto; display: none; touch-action: none; }
+  #cv.crop { cursor: crosshair; }
+  #cv.cell { cursor: pointer; }
+  .empty { align-self: center; text-align: center; color: var(--muted); padding: 40px 12px; }
+  .empty.drag { color: var(--accent); }
+  .status { font-size: 13px; color: var(--muted); margin-bottom: 8px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="box">
+      <h1>Grid Counter</h1>
+      <p class="sub">ใส่รูป วางตาราง แล้วกดกากบาทเพื่อคำนวณ %</p>
+    </div>
+
+    <div class="box">
+      <h2>1. เลือกรูปภาพ</h2>
+      <input type="file" id="file" accept="image/*">
+      <p class="hint">หรือลากไฟล์รูปมาวางในพื้นที่แสดงภาพ</p>
+    </div>
+
+    <div class="box">
+      <h2>2. ครอปและปรับขนาด</h2>
+      <div class="btns">
+        <button id="btnCrop" disabled>ครอปภาพ</button>
+        <button id="btnApplyCrop" class="primary" style="display:none">ยืนยันครอป</button>
+        <button id="btnCancelCrop" style="display:none">ยกเลิก</button>
+      </div>
+      <p class="hint" id="cropHint" style="display:none">ลากเมาส์บนภาพเพื่อเลือกส่วนที่ต้องการเก็บไว้</p>
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label for="resizeW">กว้าง (px)</label>
+          <input type="number" id="resizeW" min="10" disabled>
+        </div>
+        <div>
+          <label for="resizeH">สูง (px)</label>
+          <input type="number" id="resizeH" min="10" disabled>
+        </div>
+      </div>
+      <div class="btns">
+        <button id="btnResize" disabled>ปรับขนาด</button>
+        <button id="btnReset" disabled>กลับเป็นภาพเดิม</button>
+      </div>
+      <p class="hint">เปลี่ยนความกว้างหรือความสูงอย่างใดอย่างหนึ่ง อีกค่าจะปรับตามสัดส่วนให้เอง</p>
+    </div>
+
+    <div class="box">
+      <h2>3. ตั้งค่า Grid</h2>
+      <div class="row">
+        <div>
+          <label for="gx">จำนวนช่องแนวนอน (X)</label>
+          <input type="number" id="gx" min="1" max="200" value="20">
+        </div>
+        <div>
+          <label for="gy">จำนวนช่องแนวตั้ง (Y)</label>
+          <input type="number" id="gy" min="1" max="200" value="20">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="gridColor">สีเส้น grid</label>
+          <input type="color" id="gridColor" value="#ff0000">
+        </div>
+        <div>
+          <label for="markColor">สีกากบาท</label>
+          <input type="color" id="markColor" value="#1e4dff">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="gridW">ความหนาเส้น</label>
+          <input type="range" id="gridW" min="1" max="6" step="0.5" value="1.5">
+        </div>
+        <div>
+          <label for="gridA">ความเข้มเส้น</label>
+          <input type="range" id="gridA" min="0.2" max="1" step="0.05" value="0.9">
+        </div>
+      </div>
+    </div>
+
+    <div class="box result">
+      <h2>ผลคำนวณ</h2>
+      <div class="pct" id="pct">0%</div>
+      <div class="formula" id="formula">0 / (20 × 20) = 0%</div>
+      <div class="btns" style="margin-top:12px">
+        <button id="btnClear" disabled>ล้างกากบาท</button>
+        <button id="btnSave" disabled>บันทึกเป็น PNG</button>
+      </div>
+      <p class="hint">คลิกช่องเพื่อใส่หรือลบกากบาท ลากต่อเนื่องเพื่อใส่หลายช่องพร้อมกัน</p>
+    </div>
+  </aside>
+
+  <main>
+    <div class="status" id="status"></div>
+    <div class="stage" id="stage">
+      <div class="empty" id="empty">ยังไม่มีรูปภาพ<br>เลือกไฟล์ทางซ้าย หรือลากรูปมาวางที่นี่</div>
+      <canvas id="cv"></canvas>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const cv = $('cv'), ctx = cv.getContext('2d');
+  const stage = $('stage'), empty = $('empty');
+
+  let original = null;   // canvas ของภาพต้นฉบับ
+  let base = null;       // canvas ของภาพที่ใช้งานอยู่ (หลังครอป/ปรับขนาด)
+  let marks = new Set(); // "แถว,คอลัมน์"
+  let mode = 'grid';     // 'grid' | 'crop'
+  let cropRect = null;   // {x,y,w,h} หน่วยพิกเซลของ base
+  let dragStart = null;
+  let paintValue = null;
+  let lastCell = null;
+
+  const gx = () => Math.max(1, Math.min(200, parseInt($('gx').value) || 1));
+  const gy = () => Math.max(1, Math.min(200, parseInt($('gy').value) || 1));
+
+  function toCanvas(img) {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth || img.width;
+    c.height = img.naturalHeight || img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    return c;
+  }
+
+  function loadFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      setStatus('ไฟล์นี้ไม่ใช่รูปภาพ กรุณาเลือกไฟล์ .jpg .png .webp หรือ .gif');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      original = toCanvas(img);
+      URL.revokeObjectURL(url);
+      setBase(copyCanvas(original));
+      marks.clear();
+      enable(true);
+      setStatus('โหลดรูปแล้ว: ' + file.name);
+    };
+    img.onerror = () => setStatus('เปิดรูปนี้ไม่ได้ ลองใช้ไฟล์อื่น');
+    img.src = url;
+  }
+
+  function copyCanvas(src) {
+    const c = document.createElement('canvas');
+    c.width = src.width; c.height = src.height;
+    c.getContext('2d').drawImage(src, 0, 0);
+    return c;
+  }
+
+  function setBase(c) {
+    base = c;
+    $('resizeW').value = base.width;
+    $('resizeH').value = base.height;
+    cv.style.display = 'block';
+    empty.style.display = 'none';
+    draw();
+  }
+
+  function enable(on) {
+    ['btnCrop', 'btnResize', 'btnReset', 'btnClear', 'btnSave', 'resizeW', 'resizeH']
+      .forEach(id => $(id).disabled = !on);
+  }
+
+  function setStatus(t) { $('status').textContent = t; }
+
+  function draw() {
+    if (!base) return;
+    const W = base.width, H = base.height;
+    const fontSize = Math.max(16, Math.round(Math.max(W, 600) / 38));
+    const footerH = mode === 'crop' ? 0 : Math.round(fontSize * 2.4);
+    cv.width = W; cv.height = H + footerH;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(base, 0, 0);
+
+    if (mode === 'crop') {
+      if (cropRect) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(base, cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+                      cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(2, W / 500);
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+        ctx.setLineDash([]);
+      }
+      return;
+    }
+
+    const X = gx(), Y = gy();
+    const cw = W / X, ch = H / Y;
+    const unit = Math.max(1, Math.max(W, H) / 800);
+
+    // เส้น grid
+    ctx.save();
+    ctx.globalAlpha = parseFloat($('gridA').value);
+    ctx.strokeStyle = $('gridColor').value;
+    ctx.lineWidth = parseFloat($('gridW').value) * unit;
+    ctx.beginPath();
+    for (let i = 0; i <= X; i++) {
+      const x = Math.min(W - ctx.lineWidth / 2, Math.max(ctx.lineWidth / 2, i * cw));
+      ctx.moveTo(x, 0); ctx.lineTo(x, H);
+    }
+    for (let j = 0; j <= Y; j++) {
+      const y = Math.min(H - ctx.lineWidth / 2, Math.max(ctx.lineWidth / 2, j * ch));
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // กากบาท กลางช่อง
+    ctx.strokeStyle = $('markColor').value;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(2 * unit, Math.min(cw, ch) * 0.1);
+    const r = Math.min(cw, ch) * 0.28;
+    ctx.beginPath();
+    marks.forEach(k => {
+      const [row, col] = k.split(',').map(Number);
+      const cx = (col + 0.5) * cw, cy = (row + 0.5) * ch;
+      ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+      ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+    });
+    ctx.stroke();
+
+    // แถบขาวด้านล่าง แสดงจำนวนกากบาท / ช่องทั้งหมด และ %
+    const total = X * Y, n = marks.size;
+    const pctTxt = (Math.round((total ? n / total * 100 : 0) * 100) / 100) + '%';
+    const label = 'กากบาท ' + n + ' ช่อง / Grid ทั้งหมด ' + total +
+                  ' ช่อง (' + X + ' × ' + Y + ') = ' + pctTxt;
+    const pad = Math.round(fontSize * 0.8);
+    let fs = fontSize;
+    const fam = '"Noto Sans Thai", "Sarabun", "Tahoma", sans-serif';
+    ctx.font = '700 ' + fs + 'px ' + fam;
+    const tw = ctx.measureText(label).width;
+    if (tw > W - pad * 2) {
+      fs = Math.max(8, Math.floor(fs * (W - pad * 2) / tw));
+      ctx.font = '700 ' + fs + 'px ' + fam;
+    }
+    ctx.fillStyle = '#111111';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pad, H + footerH / 2);
+
+    updateResult();
+  }
+
+  function pruneMarks() {
+    const X = gx(), Y = gy();
+    marks.forEach(k => {
+      const [r, c] = k.split(',').map(Number);
+      if (r >= Y || c >= X) marks.delete(k);
+    });
+  }
+
+  function updateResult() {
+    const total = gx() * gy();
+    const n = marks.size;
+    const pct = total ? (n / total) * 100 : 0;
+    const txt = (Math.round(pct * 100) / 100).toString();
+    $('pct').textContent = txt + '%';
+    $('formula').textContent = n + ' / (' + gx() + ' × ' + gy() + ' = ' + total + ') = ' + txt + '%';
+  }
+
+  function pointer(e) {
+    const rect = cv.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (cv.width / rect.width),
+      y: (e.clientY - rect.top) * (cv.height / rect.height)
+    };
+  }
+
+  function cellAt(p) {
+    if (p.y > base.height) return null; // อยู่ในแถบขาวด้านล่าง
+    const col = Math.min(gx() - 1, Math.max(0, Math.floor(p.x / (base.width / gx()))));
+    const row = Math.min(gy() - 1, Math.max(0, Math.floor(p.y / (base.height / gy()))));
+    return row + ',' + col;
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    if (!base) return;
+    cv.setPointerCapture(e.pointerId);
+    const p = pointer(e);
+    if (mode === 'crop') {
+      dragStart = p;
+      cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+      draw();
+    } else {
+      const k = cellAt(p);
+      if (k === null) return;
+      paintValue = !marks.has(k);
+      lastCell = k;
+      paintValue ? marks.add(k) : marks.delete(k);
+      draw();
+    }
+  });
+
+  cv.addEventListener('pointermove', e => {
+    if (!base) return;
+    const p = pointer(e);
+    if (mode === 'crop' && dragStart) {
+      const x1 = Math.max(0, Math.min(cv.width, Math.min(dragStart.x, p.x)));
+      const y1 = Math.max(0, Math.min(cv.height, Math.min(dragStart.y, p.y)));
+      const x2 = Math.max(0, Math.min(cv.width, Math.max(dragStart.x, p.x)));
+      const y2 = Math.max(0, Math.min(cv.height, Math.max(dragStart.y, p.y)));
+      cropRect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+      draw();
+    } else if (mode === 'grid' && paintValue !== null) {
+      const k = cellAt(p);
+      if (k !== null && k !== lastCell) {
+        lastCell = k;
+        paintValue ? marks.add(k) : marks.delete(k);
+        draw();
+      }
+    }
+  });
+
+  const endDrag = () => { dragStart = null; paintValue = null; lastCell = null; };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+
+  // ครอป
+  function setMode(m) {
+    mode = m;
+    const crop = m === 'crop';
+    cv.className = crop ? 'crop' : 'cell';
+    $('btnCrop').style.display = crop ? 'none' : '';
+    $('btnApplyCrop').style.display = crop ? '' : 'none';
+    $('btnCancelCrop').style.display = crop ? '' : 'none';
+    $('cropHint').style.display = crop ? '' : 'none';
+    cropRect = null;
+    draw();
+  }
+
+  $('btnCrop').onclick = () => setMode('crop');
+  $('btnCancelCrop').onclick = () => setMode('grid');
+  $('btnApplyCrop').onclick = () => {
+    if (!cropRect || cropRect.w < 5 || cropRect.h < 5) {
+      setStatus('ลากบนภาพเพื่อเลือกพื้นที่ครอปก่อน');
+      return;
+    }
+    const c = document.createElement('canvas');
+    c.width = Math.round(cropRect.w); c.height = Math.round(cropRect.h);
+    c.getContext('2d').drawImage(base, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, c.width, c.height);
+    mode = 'grid';
+    setBase(c);
+    setMode('grid');
+    setStatus('ครอปแล้ว ขนาดใหม่ ' + c.width + ' × ' + c.height + ' px');
+  };
+
+  // ปรับขนาด (คงสัดส่วน)
+  $('resizeW').addEventListener('input', () => {
+    if (!base) return;
+    const w = parseInt($('resizeW').value);
+    if (w > 0) $('resizeH').value = Math.round(w * base.height / base.width);
+  });
+  $('resizeH').addEventListener('input', () => {
+    if (!base) return;
+    const h = parseInt($('resizeH').value);
+    if (h > 0) $('resizeW').value = Math.round(h * base.width / base.height);
+  });
+  $('btnResize').onclick = () => {
+    const w = parseInt($('resizeW').value), h = parseInt($('resizeH').value);
+    if (!(w >= 10 && h >= 10)) { setStatus('ขนาดต้องไม่น้อยกว่า 10 px'); return; }
+    if (w > 8000 || h > 8000) { setStatus('ขนาดใหญ่เกินไป (สูงสุด 8000 px)'); return; }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(base, 0, 0, w, h);
+    setBase(c);
+    setStatus('ปรับขนาดเป็น ' + w + ' × ' + h + ' px');
+  };
+  $('btnReset').onclick = () => {
+    if (!original) return;
+    setBase(copyCanvas(original));
+    setMode('grid');
+    setStatus('กลับเป็นภาพเดิมแล้ว');
+  };
+
+  // ตั้งค่า grid
+  ['gx', 'gy'].forEach(id => $(id).addEventListener('input', () => { pruneMarks(); draw(); updateResult(); }));
+  ['gridColor', 'markColor', 'gridW', 'gridA'].forEach(id => $(id).addEventListener('input', draw));
+
+  $('btnClear').onclick = () => { marks.clear(); draw(); };
+
+  $('btnSave').onclick = () => {
+    if (mode === 'crop') setMode('grid');
+    const a = document.createElement('a');
+    a.download = 'grid-result.png';
+    a.href = cv.toDataURL('image/png');
+    a.click();
+  };
+
+  // เลือกไฟล์ / ลากวาง
+  $('file').addEventListener('change', e => loadFile(e.target.files[0]));
+  stage.addEventListener('dragover', e => { e.preventDefault(); empty.classList.add('drag'); });
+  stage.addEventListener('dragleave', () => empty.classList.remove('drag'));
+  stage.addEventListener('drop', e => {
+    e.preventDefault();
+    empty.classList.remove('drag');
+    loadFile(e.dataTransfer.files[0]);
+  });
+
+  cv.className = 'cell';
+  updateResult();
+})();
+</script>
+</body>
+</html>
